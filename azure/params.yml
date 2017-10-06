@@ -1,0 +1,27 @@
+##############################################
+### Concourse Objects
+##############################################
+git_private_key: |
+  -----BEGIN RSA PRIVATE KEY-----
+  -----END RSA PRIVATE KEY-----
+
+# Opsman Settings
+opsman_domain_or_ip_address:  # This should be your pcf_ert_domain with "opsman." as a prefix
+pcf_opsman_admin_username: 
+pcf_opsman_admin_password: 
+
+##############################################
+### PCF Object Params
+##############################################
+winrt_major_minor_version: '1\.12\..*' # Reqd
+
+# Pivent Download token
+pivnet_token: 
+
+# The storage account and container that will be used for your terraform state
+terraform_azure_account_name: 
+terraform_azure_access_key: 
+terraform_statefile_container: 
+
+# Winrt Settings
+deployment_network_name: 

@@ -1,0 +1,141 @@
+groups:
+
+- name: all
+  jobs:
+  - bootstrap-terraform-state
+  - upload-winrt
+  - configure-winrt
+  - deploy-winrt
+  
+- name: winrt
+  jobs:
+  - upload-winrt
+  - configure-winrt
+  - deploy-winrt
+  
+resource_types:
+- name: azure-blobstore
+  type: docker-image
+  source:
+    repository: czero/azure-blobstore-resource
+
+- name: pivnet
+  type: docker-image
+  source:
+    repository: pivotalcf/pivnet-resource
+    tag: latest-final
+
+resources:
+- name: terraform-state
+  type: azure-blobstore
+  source:
+    storage_account_name: {{terraform_azure_account_name}}
+    storage_account_key: {{terraform_azure_access_key}}
+    container: {{terraform_statefile_container}}
+    versioned_file: terraform.tfstate
+
+- name: pcf-install-runtime-for-windows-pipeline
+  type: git
+  source:
+    uri: git@github.com:sreenivasmrpivot/pcf-install-runtime-for-windows-pipeline.git
+    branch: master
+    private_key: {{git_private_key}}
+
+- name: pivnet-windows-runtime
+  type: pivnet
+  check_every: 10m
+  source:
+    api_token: {{pivnet_token}}
+    product_slug: runtime-for-windows
+    product_version: {{winrt_major_minor_version}}
+    sort_by: semver
+
+jobs:
+####################################
+## Job - Boostrap Terraform State ##
+####################################
+- name: bootstrap-terraform-state
+  serial_groups: [terraform]
+  plan:
+  - get: pcf-install-runtime-for-windows-pipeline
+  - task: create-terraform-state
+    params:
+      AZURE_STORAGE_ACCOUNT: {{terraform_azure_account_name}}
+      AZURE_STORAGE_KEY: {{terraform_azure_access_key}}
+      CONTAINER: {{terraform_statefile_container}}
+    file: pcf-install-runtime-for-windows-pipeline/azure/tasks/create-initial-terraform-state/task.yml
+
+#######################################
+## Job - Upload Windows Runtime      ##
+#######################################
+- name: upload-winrt
+  serial_groups: [winrt]
+  plan:
+  - aggregate:
+    - get: pcf-install-runtime-for-windows-pipeline
+    - get: terraform-state
+    - get: pivnet-product
+      resource: pivnet-windows-runtime
+      params:
+        globs:
+        - "*pivotal"
+
+  - task: upload-tile
+    file: pcf-install-runtime-for-windows-pipeline/tasks/upload-product-and-stemcell/task.yml
+    params:
+      OPSMAN_DOMAIN_OR_IP_ADDRESS: {{opsman_domain_or_ip_address}}
+      OPS_MGR_USR: {{pcf_opsman_admin_username}}
+      OPS_MGR_PWD: {{pcf_opsman_admin_password}}
+      PIVNET_API_TOKEN: {{pivnet_token}}
+      IAAS: "azure"
+      NO_PROXY: ""
+      OM_IP: ""
+
+  - task: stage-tile
+    file: pcf-install-runtime-for-windows-pipeline/tasks/stage-product/task.yml
+    params:
+      OPSMAN_DOMAIN_OR_IP_ADDRESS: {{opsman_domain_or_ip_address}}
+      OPSMAN_USERNAME: {{pcf_opsman_admin_username}}
+      OPSMAN_PASSWORD: {{pcf_opsman_admin_password}}
+      PRODUCT_NAME: p-windows-runtime
+
+##########################################
+## Job - Configure Windows Runtime      ##
+##########################################
+- name: configure-winrt
+  serial: true
+  max_in_flight: 1
+  serial_groups: [winrt]
+  plan:
+  - aggregate:
+    - get: pcf-install-runtime-for-windows-pipeline
+    passed: [upload-winrt]
+    params: {globs: []}
+
+  - task: configure-winrt
+    file: pcf-install-runtime-for-windows-pipeline/tasks/configure-winrt/task.yml
+    params:
+      OPSMAN_DOMAIN_OR_IP_ADDRESS: {{opsman_domain_or_ip_address}}
+      OPSMAN_USERNAME: {{pcf_opsman_admin_username}}
+      OPSMAN_PASSWORD: {{pcf_opsman_admin_password}}
+      NETWORK_NAME: {{deployment_network_name}}      
+
+#############################
+## Job - Deploy    Winrt   ##
+#############################
+- name: deploy-winrt
+  serial: true
+  max_in_flight: 1
+  serial_groups: [winrt]
+  plan:
+  - aggregate:
+    - get: pcf-install-runtime-for-windows-pipeline
+      passed: [configure-winrt]
+      params: {globs: []}
+
+  - task: deploy-winrt
+    file: pcf-install-runtime-for-windows-pipeline/tasks/apply-changes/task.yml
+    params:
+      OPSMAN_DOMAIN_OR_IP_ADDRESS: {{opsman_domain_or_ip_address}}
+      OPSMAN_USERNAME: {{pcf_opsman_admin_username}}
+      OPSMAN_PASSWORD: {{pcf_opsman_admin_password}}

@@ -1,0 +1,21 @@
+---
+platform: linux
+
+image_resource:
+  type: docker-image
+  source:
+    repository: czero/cflinuxfs2
+
+inputs:
+- name: pcf-install-runtime-for-windows-pipeline
+
+run:
+  path: pcf-install-runtime-for-windows-pipeline/tasks//configure-winrt/task.sh
+
+params:
+  OPSMAN_USERNAME:
+  OPSMAN_PASSWORD:
+  OPSMAN_DOMAIN_OR_IP_ADDRESS:
+  ERT_SINGLETON_JOB_AZ:
+  DEPLOYMENT_NW_AZS:
+  NETWORK_NAME:
